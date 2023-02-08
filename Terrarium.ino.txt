@@ -1,0 +1,276 @@
+#define anzahlSchaltungen 4
+#define an 1
+#define aus 0
+int schaltplan[anzahlSchaltungen][4] = {
+  {8, 30, 1, an},
+  {19, 0, 1, aus},
+  {10, 0, 2, an},
+  {17, 0, 2, aus},
+};
+
+#include <EEPROM.h>
+
+#include <TouchScreen.h> //touch library
+#include <LCDWIKI_GUI.h> //Core graphics library
+#include <LCDWIKI_KBV.h> //Hardware-specific library
+#include "switch_font.c"
+
+#include <ThreeWire.h>  
+#include <RtcDS1302.h>
+ThreeWire myWire(37,35,39); // IO, SCLK, CE
+RtcDS1302<ThreeWire> Rtc(myWire);
+
+#include "DHT.h"
+#define DHTTYPE DHT22  
+#define DHTPIN1 11     // what pin we're connected to
+#define DHTPIN2 13     // what pin we're connected to
+DHT dht1(DHTPIN1, DHTTYPE);
+DHT dht2(DHTPIN2, DHTTYPE);
+
+LCDWIKI_KBV my_lcd(240,320,A3,A2,A1,A0,A4);//width,height,cs,cd,wr,rd,reset 
+
+#define RELAY1 14
+#define RELAY2 15
+
+#define BLACK   0x0000
+#define BLUE    0x001F
+#define RED     0xF800
+#define GREEN   0x07E0
+#define CYAN    0x07FF
+#define MAGENTA 0xF81F
+#define YELLOW  0xFFE0
+#define WHITE   0xFFFF
+
+#define YP A3  // must be an analog pin, use "An" notation!
+#define XM A2  // must be an analog pin, use "An" notation!
+#define YM 9   // can be a digital pin
+#define XP 8   // can be a digital pin
+
+#define TS_MINX 117
+#define TS_MAXX 911
+
+#define TS_MINY 87
+#define TS_MAXY 906
+
+boolean switch_flag_1 = true,switch_flag_2 = true,switch_flag_3 = true,switch_flag_4 = true,switch_flag_5 = true,switch_flag_6 = true;  
+int16_t menu_flag = 1,old_menu_flag;     
+
+TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
+
+//display string
+void show_string(uint8_t *str,int16_t x,int16_t y,uint8_t csize,uint16_t fc, uint16_t bc,boolean mode)
+{
+    my_lcd.Set_Text_Mode(mode);
+    my_lcd.Set_Text_Size(csize);
+    my_lcd.Set_Text_colour(fc);
+    my_lcd.Set_Text_Back_colour(bc);
+    my_lcd.Print_String(str,x,y);
+}
+
+//display a picture
+void show_picture(const uint8_t *color_buf,int16_t buf_size,int16_t x1,int16_t y1,int16_t x2,int16_t y2)
+{
+    my_lcd.Set_Addr_Window(x1, y1, x2, y2); 
+    my_lcd.Push_Any_Color(color_buf, buf_size, 1, 1);
+}
+
+//Check whether to press or not
+boolean is_pressed(int16_t x1,int16_t y1,int16_t x2,int16_t y2,int16_t px,int16_t py)
+{
+    if((px > x1 && px < x2) && (py > y1 && py < y2))
+    {
+        return true;  
+    } 
+    else
+    {
+        return false;  
+    }
+ }
+
+void lampe_1_an()
+{
+  show_picture(switch_on_2,sizeof(switch_on_2)/2,5,40,34,69);
+  show_string("Lampe 1 an ",60,46,2,GREEN, WHITE,0);
+  digitalWrite(RELAY1,LOW);
+  EEPROM.update(1,1);
+  switch_flag_1 = true;
+}
+
+void lampe_1_aus()
+{
+  show_picture(switch_off_2,sizeof(switch_off_2)/2,5,40,34,69);
+  show_string("Lampe 1 aus ",60,46,2,RED, WHITE,0); 
+  digitalWrite(RELAY1,HIGH);
+  EEPROM.update(1,0);
+  switch_flag_1 = false;
+}
+
+void lampe_2_an()
+{
+  show_picture(switch_on_2,sizeof(switch_on_2)/2,5,75,34,104);
+  show_string("Lampe 2 an ",60,81,2,GREEN, WHITE,0);
+  digitalWrite(RELAY2,LOW);
+  EEPROM.update(2,1);
+  switch_flag_2 = true;
+}
+
+void lampe_2_aus()
+{
+  show_picture(switch_off_2,sizeof(switch_off_2)/2,5,75,34,104);
+  show_string("Lampe 2 aus ",60,81,2,RED, WHITE,0); 
+  digitalWrite(RELAY2,HIGH);
+  EEPROM.update(2,0);
+  switch_flag_2 = false;
+
+}
+
+#define MINPRESSURE 10
+#define MAXPRESSURE 1000
+
+long lastUpdate = millis();
+
+void setup() {
+  // put your setup code here, to run once:
+
+ //Serial.begin(57600);
+  my_lcd.Init_LCD(); 
+  my_lcd.Set_Rotation(1);
+  my_lcd.Fill_Screen(WHITE);
+  my_lcd.Set_Draw_color(255, 0, 0); 
+  Wire.begin();
+  dht1.begin();
+  dht2.begin(); 
+  // Initialise the Arduino data pins for OUTPUT
+  pinMode(RELAY1, OUTPUT);
+  pinMode(RELAY2, OUTPUT);
+
+  //Schaltzustand wieder herstellen
+  if (EEPROM.read(1)==0) lampe_1_aus();
+  else lampe_1_an();
+  
+  if (EEPROM.read(2)==0)lampe_2_aus();
+  else lampe_2_an();
+  
+  //Beschriftungen setzen
+  my_lcd.Set_Text_colour(BLUE); 
+  my_lcd.Print_String("Temperatur", CENTER, my_lcd.Get_Display_Height()/2);
+  my_lcd.Set_Text_colour(BLACK);
+
+  my_lcd.Set_Text_colour(BLUE); 
+  my_lcd.Print_String("Luftfeuchtigkeit", CENTER, my_lcd.Get_Display_Height()/2-1+60);
+  my_lcd.Set_Text_colour(BLACK); 
+
+
+ long lastUpdate = millis();
+}
+
+void loop() {
+    float temp_hum_val1[2] = {0};
+    float temp_hum_val2[2] = {0};
+    my_lcd.Set_Text_Back_colour(WHITE); 
+    my_lcd.Set_Text_Size(2);
+    my_lcd.Set_Text_Mode(0);
+
+  /*--------------------------------------------------------------
+  * Alle 10000 ms werden die Sensoren ausgelesen und angezeigt sowie der schaltplan bearbeitet
+  * ---------------------------------------------------------------
+  */
+  
+    if(millis()-lastUpdate > 10000){
+  //    printf(millis()-lastUpdate);
+
+      my_lcd.Set_Text_colour(BLACK)  ;        
+
+      lastUpdate = millis();  
+    
+      if(!dht1.readTempAndHumidity(temp_hum_val1)){
+          my_lcd.Print_Number_Float(temp_hum_val1[1], 1, my_lcd.Get_Display_Width()/2-1-60, my_lcd.Get_Display_Height()/2+30, ',', 3, ' ' );
+          my_lcd.Print_Number_Float(temp_hum_val1[0], 1,  my_lcd.Get_Display_Width()/2-1-60, my_lcd.Get_Display_Height()/2+80, ',', 3, ' ');
+      };
+
+      if(!dht2.readTempAndHumidity(temp_hum_val2)){
+          my_lcd.Print_Number_Float(temp_hum_val2[1], 1, my_lcd.Get_Display_Width()/2-1+60, my_lcd.Get_Display_Height()/2+30, ',' , 3, ' ' );
+          my_lcd.Print_Number_Float(temp_hum_val2[0], 1, my_lcd.Get_Display_Width()/2-1+60, my_lcd.Get_Display_Height()/2+80, ',', 3, ' ');
+      };
+      
+  /*--------------------------------------------------------------
+  * Hier wird die Uhr ausgelesen und in einen geeigneten String verwandelt
+  * ---------------------------------------------------------------
+  */
+     
+     RtcDateTime dt = Rtc.GetDateTime();
+     char datestring[20];
+
+      snprintf_P(datestring, 
+            (sizeof(datestring) / sizeof(datestring[0])),
+            PSTR("%02u.%02u.%04u %02u:%02u"),
+            dt.Day(),
+            dt.Month(),
+            dt.Year(),
+            dt.Hour(),
+            dt.Minute()  /* ,
+            dt.Second() */ );
+     my_lcd.Print_String(datestring, CENTER, my_lcd.Get_Display_Height()/2-1-100);
+    
+    /* ----------------------------------------------------------------------------
+    *  Über den Schaltplan gehen und gucken, ob etwas zu machen ist
+    * ---------------------------------------------------------------------------
+ */  
+      for (int i = 0; i < anzahlSchaltungen; i++) {
+//        char buff[20];
+//        sprintf(buff, "Sollzeit %d:%d Echtzeit %d:%d", schaltplan[i][0], schaltplan[i][1], dt.Hour(), dt.Minute());
+//        Serial.print(buff);
+//        Serial.println();
+        if (schaltplan[i][0]==dt.Hour() && schaltplan[i][1]==dt.Minute()) {
+//          Serial.println("Stunde und Minute gleich");
+          if (schaltplan[i][2]==1) {
+            if (schaltplan[i][3]==an) lampe_1_an();
+            if (schaltplan[i][3]==aus) lampe_1_aus();   
+          };
+          if (schaltplan[i][2]==2) {
+            if (schaltplan[i][3]==an) lampe_2_an();
+            if (schaltplan[i][3]==aus) lampe_2_aus();   
+          };
+        };
+     };
+
+    };
+
+
+  /* ----------------------------------------------------------------------------
+   *  Hier wird über das Display geschaltet
+   * ---------------------------------------------------------------------------
+  */
+  TSPoint p = ts.getPoint();
+  pinMode(XM, OUTPUT);
+  pinMode(YP, OUTPUT);
+  if (p.z > MINPRESSURE && p.z < MAXPRESSURE)
+  {
+    p.x = my_lcd.Get_Display_Width()-map(p.x, TS_MINX, TS_MAXX, my_lcd.Get_Display_Width(), 0);
+    p.y = my_lcd.Get_Display_Height()-map(p.y, TS_MINY, TS_MAXY, my_lcd.Get_Display_Height(), 0);
+//    p.x = map(p.x, TS_MINX, TS_MAXX, my_lcd.Get_Display_Width(), 0);
+//    p.y = map(p.y, TS_MINY, TS_MAXY, my_lcd.Get_Display_Height(), 0);
+    if(is_pressed(0,50,25,85,p.y,p.x))
+    { 
+      if(switch_flag_1) 
+        lampe_1_aus();         
+      else
+        lampe_1_an();
+      delay(100);
+     };
+
+    if(is_pressed(0,105,25,155,p.y,p.x))
+    { 
+      if(switch_flag_2)
+        lampe_2_aus();
+      else
+        lampe_2_an();
+      delay(100);
+     }
+     
+  };
+
+
+
+
+}

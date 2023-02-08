@@ -1,0 +1,76 @@
+#include <Adafruit_Sensor.h>
+#include <DHT.h>
+#include <DHT_U.h>
+
+#define DHTPIN 2
+#define DHTTYPE DHT11
+#define HEAT_LAMP_PIN A0
+#define HEAT_MAT_PIN A1
+#define DAYLIGHT_LAMP_PIN A2
+#define IRRIGATION_SYSTEM_PIN A3
+
+DHT dht(DHTPIN, DHTTYPE);
+
+void setup() {
+  Serial.begin(9600);
+  dht.begin();
+  pinMode(HEAT_LAMP_PIN, OUTPUT);
+  pinMode(HEAT_MAT_PIN, OUTPUT);
+  pinMode(DAYLIGHT_LAMP_PIN, OUTPUT);
+  pinMode(IRRIGATION_SYSTEM_PIN, OUTPUT);
+}
+
+void loop() {
+  float h = dht.readHumidity();
+  float t = dht.readTemperature();
+
+  if (isnan(h) || isnan(t)) {
+    Serial.println("Failed to read from DHT sensor!");
+    return;
+  }
+
+  Serial.print("Humidity: ");
+  Serial.print(h);
+  Serial.print(" %\t");
+  Serial.print("Temperature: ");
+  Serial.print(t);
+  Serial.println(" *C");
+
+  int hour = hour();
+
+  if (hour >= 7 && hour < 22) {
+    digitalWrite(DAYLIGHT_LAMP_PIN, HIGH);
+
+    if (h < 40) {
+      digitalWrite(IRRIGATION_SYSTEM_PIN, HIGH);
+    } else {
+      digitalWrite(IRRIGATION_SYSTEM_PIN, LOW);
+    }
+
+    if (hour >= 8 && hour < 16) {
+      if (t > 24) {
+        digitalWrite(HEAT_LAMP_PIN, LOW);
+      } else {
+        digitalWrite(HEAT_LAMP_PIN, HIGH);
+      }
+    } else {
+      digitalWrite(HEAT_LAMP_PIN, LOW);
+    }
+  } else {
+    digitalWrite(DAYLIGHT_LAMP_PIN, LOW);
+    digitalWrite(HEAT_LAMP_PIN, LOW);
+    digitalWrite(IRRIGATION_SYSTEM_PIN, LOW);
+  }
+
+  if (t < 21) {
+    digitalWrite(HEAT_MAT_PIN, HIGH);
+  } else {
+    digitalWrite(HEAT_MAT_PIN, LOW);
+  }
+
+  delay(2000);
+}
+
+
+
+Mit diesem Code werden die Tageslichtlampen zwischen 07:30 Uhr und 22:00 Uhr eingeschaltet. Die Heizlampe wird nur zwischen 08:00 Uhr und 16:00 Uhr eingeschaltet, wenn die aktuelle Temperatur unter 24°C liegt. Die Beregnungsanlage wird nur tagsüber bis 22:00 Uhr eingeschaltet, wenn die Luftfeuchtigkeit unter 40% liegt.
